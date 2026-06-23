@@ -715,18 +715,50 @@ window.__PETRO_DATA = {
 
     // ===== CORE ENGINE =====
     async function initDashboard() {
-      updateSyncStatus('loading', '구글시트 데이터 동기화 중...');
-      try {
-        const res = await fetch(SHEET_CSV_URL + '&_ts=' + Date.now(), { cache: 'no-store' });
-        if (!res.ok) throw new Error('Network error');
-        const text = await res.text();
-        
-        processSheetData(text);
-        fetchLiveQuotes();
-      } catch (err) {
-        console.error(err);
-        updateSyncStatus('error', '데이터 로드 실패 (오프라인 상태)');
+      updateSyncStatus('loading', '구글시트 동기화 중...');
+
+      // 내장 데이터 먼저 표시 (즉시)
+      if (window.__PETRO_DATA && globalData.rows.length === 0) {
+        loadFromPetroData();
       }
+
+      // CORS 우회 프록시 목록 (순서대로 시도)
+      const proxies = [
+        (url) => `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+        (url) => `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(url)}`,
+        (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+      ];
+
+      const targetUrl = SHEET_CSV_URL + '&_ts=' + Date.now();
+
+      for (let i = 0; i < proxies.length; i++) {
+        try {
+          const proxyUrl = proxies[i](targetUrl);
+          const res = await fetch(proxyUrl, { cache: 'no-store' });
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          
+          let text;
+          // allorigins는 JSON으로 감싸서 반환
+          if (proxyUrl.includes('allorigins')) {
+            const json = await res.json();
+            text = json.contents;
+          } else {
+            text = await res.text();
+          }
+
+          if (!text || text.length < 100) throw new Error('Empty response');
+          
+          processSheetData(text);
+          fetchLiveQuotes();
+          return; // 성공 시 종료
+        } catch (e) {
+          console.warn(`프록시 ${i+1} 실패:`, e.message);
+        }
+      }
+
+      // 모든 프록시 실패 → 내장 데이터로 운영
+      updateSyncStatus('ok', '내장 데이터 기준 (최신: 6/22)');
+      fetchLiveQuotes();
     }
 
     function processSheetData(text) {
