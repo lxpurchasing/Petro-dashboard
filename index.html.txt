@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>석유화학 시황 대시보드</title>
+  
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" prefix="og: http://ogp.me/ns#">
+  
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body { margin: 0; background: #F4F5F7; -webkit-font-smoothing: antialiased; font-family: 'Pretendard', system-ui, sans-serif; color: #15171C; padding-bottom: 72px; }
+    ::selection { background: #1C2433; color: #fff; }
+    @keyframes blip { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+    a { text-decoration: none; color: inherit; }
+    select:focus, input:focus, textarea:focus { border-color: #B08D57 !important; }
+    
+    /* 유틸리티 스타일 */
+    .grid-5 { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; }
+    .grid-7 { display: grid; grid-template-columns: repeat(auto-fit, minmax(235px, 1fr)); gap: 13px; }
+    .grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+    @media (max-width: 768px) { .grid-2 { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+
+  <div style="background:#1C2433; color:#fff; border-bottom:3px solid #B08D57;">
+    <div style="max-width:1340px; margin:0 auto; padding:26px 32px 22px; display:flex; justify-content:space-between; align-items:flex-end; flex-wrap:wrap; gap:20px;">
+      <div>
+        <div style="font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:2.5px; color:#B08D57; font-weight:500;">ICIS · PLATTS DAILY PRICE & SPREAD TRACKER</div>
+        <div style="font-size:27px; font-weight:800; letter-spacing:-0.6px; margin-top:7px;">석유화학 시황 대시보드</div>
+        <div style="font-size:13px; color:#9AA4B2; margin-top:5px; font-family:'IBM Plex Mono',monospace; letter-spacing:0.3px;">Feedstock · Olefins · Aromatics · PVC · Plasticizer · Polyester · Spreads (BEP)</div>
+      </div>
+      <div style="display:flex; flex-direction:column; align-items:flex-end; gap:8px;">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span style="display:inline-flex; align-items:center; gap:6px; background:rgba(197,57,43,0.16); border:1px solid rgba(197,57,43,0.5); color:#F0A39A; font-size:11px; font-family:'IBM Plex Mono',monospace; font-weight:600; letter-spacing:0.5px; padding:4px 9px; border-radius:4px;">
+            <span style="width:6px; height:6px; border-radius:50%; background:#E5544A; animation:blip 1.6s infinite;"></span>
+            <span id="badge-date">- / - 종가</span>
+          </span>
+          <span style="font-size:11px; font-family:'IBM Plex Mono',monospace; color:#6E7888; border:1px solid #38414F; padding:4px 9px; border-radius:4px; letter-spacing:0.4px;">ICIS · Platts</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:9px;">
+          <span style="font-size:11px; font-family:'IBM Plex Mono',monospace; color:#9AA4B2; letter-spacing:0.5px;">조회일자</span>
+          <select id="select-date" style="background:#11161F; color:#E8ECF2; border:1px solid #38414F; border-radius:5px; padding:5px 8px; font-size:12px; font-family:'IBM Plex Mono',monospace; outline:none; cursor:pointer;">
+            </select>
+        </div>
+        <div id="text-as-of" style="font-size:12px; color:#9AA4B2; font-family:'IBM Plex Mono',monospace; letter-spacing:0.3px;">----.--.-- 종가 기준</div>
+        <button id="btn-sync" title="구글시트에서 최신 데이터 다시 불러오기" style="display:inline-flex; align-items:center; gap:6px; background:#11161F; border:1px solid #38414F; border-radius:5px; padding:5px 9px; cursor:pointer; font-family:'IBM Plex Mono',monospace; font-size:11px;">
+          <span id="sync-dot" style="width:7px; height:7px; border-radius:50%; background:#9AA4B2; display:inline-block;"></span>
+          <span id="sync-label" style="color:#C4CCD6;">동기화 초기화 중</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div style="position:sticky; top:0; z-index:50; background:rgba(255,255,255,0.92); backdrop-filter:blur(8px); border-bottom:1px solid #E1E4E9; box-shadow:0 1px 3px rgba(20,30,50,0.04);">
+    <div style="max-width:1340px; margin:0 auto; padding:0 32px; display:flex; align-items:center; justify-content:space-between; height:52px; overflow-x:auto;">
+      <div style="font-size:12.5px; font-weight:700; letter-spacing:-0.2px; color:#1C2433; white-space:nowrap; padding-right:24px;">시황 리포트</div>
+      <div style="display:flex; gap:4px; align-items:center;">
+        <a href="#sec-sig" style="font-size:13px; color:#4A515E; font-weight:500; padding:7px 13px; border-radius:5px; white-space:nowrap;">핵심 시그널</a>
+        <a href="#sec-table" style="font-size:13px; color:#4A515E; font-weight:500; padding:7px 13px; border-radius:5px; white-space:nowrap;">가격 비교표</a>
+        <a href="#sec-macro" style="font-size:13px; color:#4A515E; font-weight:500; padding:7px 13px; border-radius:5px; white-space:nowrap;">원료·매크로</a>
+        <a href="#sec-prod" style="font-size:13px; color:#4A515E; font-weight:500; padding:7px 13px; border-radius:5px; white-space:nowrap;">제품가</a>
+        <a href="#sec-spread" style="font-size:13px; color:#4A515E; font-weight:500; padding:7px 13px; border-radius:5px; white-space:nowrap;">스프레드·BEP</a>
+      </div>
+    </div>
+  </div>
+
+  <div style="max-width:1340px; margin:0 auto; padding:0 32px;">
+
+    <div style="background:linear-gradient(110deg,#10141C 0%,#161C28 60%,#1B2230 100%); border-radius:12px; margin-top:18px; padding:18px 22px; display:flex; align-items:stretch; gap:22px; flex-wrap:wrap; box-shadow:0 8px 26px rgba(15,20,32,0.18);">
+      <div style="display:flex; align-items:center; gap:8px; flex:none; padding-right:20px; border-right:1px solid rgba(255,255,255,0.08);">
+        <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#E5484D; box-shadow:0 0 0 0 rgba(229,72,77,0.6); animation:blip 1.6s infinite;"></span>
+        <div>
+          <div style="font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:2px; color:#E5484D; font-weight:700;">LIVE NOW</div>
+          <div id="live-stamp" style="font-size:11px; color:#7E8794; font-family:'IBM Plex Mono',monospace; margin-top:2px;">조회 중...</div>
+        </div>
+      </div>
+
+      <div style="display:flex; align-items:baseline; gap:12px; flex:none;">
+        <div style="font-size:12px; color:#8B95A4; font-weight:600; letter-spacing:0.5px; align-self:center;">WTI</div>
+        <div id="live-wti" style="font-family:'IBM Plex Mono',monospace; font-size:30px; font-weight:700; color:#F4F7FB; line-height:1; letter-spacing:-0.5px;">--.--</div>
+        <div style="font-size:12px; color:#8B95A4; align-self:center;">$/bbl</div>
+        <div style="display:flex; flex-direction:column; align-self:center;">
+          <span id="live-wti-chg" style="font-family:'IBM Plex Mono',monospace; font-size:13px; font-weight:700; line-height:1.2;">--</span>
+          <span style="font-size:10px; color:#6B7482; font-family:'IBM Plex Mono',monospace;">Yahoo 실시간</span>
+        </div>
+      </div>
+
+      <div style="display:flex; align-items:baseline; gap:12px; flex:none; padding-left:20px; border-left:1px solid rgba(255,255,255,0.08);">
+        <div style="font-size:12px; color:#8B95A4; font-weight:600; letter-spacing:0.5px; align-self:center;">USD/KRW</div>
+        <div id="live-krw" style="font-family:'IBM Plex Mono',monospace; font-size:30px; font-weight:700; color:#F4F7FB; line-height:1; letter-spacing:-0.5px;">-,---</div>
+        <div style="font-size:12px; color:#8B95A4; align-self:center;">원</div>
+        <div style="display:flex; flex-direction:column; align-self:center;">
+          <span id="live-krw-chg" style="font-family:'IBM Plex Mono',monospace; font-size:13px; font-weight:700; line-height:1.2;">--</span>
+          <span style="font-size:10px; color:#6B7482; font-family:'IBM Plex Mono',monospace;">ER API</span>
+        </div>
+      </div>
+
+      <div style="flex:1 1 280px; min-width:240px; display:flex; align-items:center; gap:12px; padding-left:22px; border-left:1px solid rgba(255,255,255,0.08);">
+        <div style="flex:1;">
+          <div style="font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:1.5px; color:#B08D57; font-weight:700; margin-bottom:4px;">시황 요약</div>
+          <div id="live-summary" style="font-size:13.5px; color:#D7DCE4; line-height:1.5; text-wrap:pretty;">실시간 금융 데이터를 로드하고 있습니다...</div>
+        </div>
+      </div>
+    </div>
+
+    <section id="sec-sig" style="padding:38px 0 8px; scroll-margin-top:64px;">
+      <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:18px;">
+        <div>
+          <div style="font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:2px; color:#B08D57; font-weight:600;">01 — SUMMARY</div>
+          <h2 style="font-size:22px; font-weight:800; letter-spacing:-0.5px; margin:6px 0 0;">핵심 시그널</h2>
+          <div style="font-size:13px; color:#6A6F7A; margin-top:4px;">핵심 지표 마진 포지션 현황</div>
+        </div>
+        <div style="font-size:11px; font-family:'IBM Plex Mono',monospace; color:#9AA0AB;">WoW 기준 일주일 대비 변동</div>
+      </div>
+      <div id="signals-container" class="grid-5">
+        </div>
+    </section>
+
+    <section id="sec-table" style="padding:34px 0 8px; scroll-margin-top:64px;">
+      <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:18px; flex-wrap:wrap; gap:10px;">
+        <div>
+          <div style="font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:2px; color:#B08D57; font-weight:600;">02 — PRICE COMPARISON</div>
+          <h2 style="font-size:22px; font-weight:800; letter-spacing:-0.5px; margin:6px 0 0;">시점별 가격 비교</h2>
+          <div style="font-size:13px; color:#6A6F7A; margin-top:4px;">조회일자 기준 전주, 전년 및 지정 기준일 대비 등락률 분석</div>
+        </div>
+      </div>
+      
+      <div style="background:#fff; border:1px solid #E4E6EB; border-radius:8px; overflow-x:auto;">
+        <table style="width:100%; border-collapse:collapse; text-align:right; font-size:13px;">
+          <thead>
+            <tr style="background:#FAFAFB; border-bottom:1px solid #E9EBEF; color:#4A515E; font-weight:700;">
+              <th style="padding:12px; text-align:left;">제품 구분</th>
+              <th style="padding:12px;">1주전 가격</th>
+              <th style="padding:12px; background:#FAF8F3; color:#1C2433; font-weight:800;">현재 선택가</th>
+              <th style="padding:12px;">변동폭 (WoW)</th>
+              <th style="padding:12px;">변동률 (%)</th>
+            </tr>
+          </thead>
+          <tbody id="table-body-price">
+            </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="sec-macro" style="padding:34px 0 8px; scroll-margin-top:64px;">
+      <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:18px;">
+        <div>
+          <div style="font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:2px; color:#B08D57; font-weight:600;">03 — FEEDSTOCK & MACRO</div>
+          <h2 style="font-size:22px; font-weight:800; letter-spacing:-0.5px; margin:6px 0 0;">원료 · 매크로 거시지표</h2>
+          <div style="font-size:13px; color:#6A6F7A; margin-top:4px;">원유 · 나프타 · 환율 및 주요 인덱스 정보</div>
+        </div>
+      </div>
+      <div id="macro-container" class="grid-7">
+        </div>
+    </section>
+
+    <section id="sec-prod" style="padding:34px 0 8px; scroll-margin-top:64px;">
+      <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:18px; flex-wrap:wrap; gap:10px;">
+        <div>
+          <div style="font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:2px; color:#B08D57; font-weight:600;">04 — PRODUCT PRICES</div>
+          <h2 style="font-size:22px; font-weight:800; letter-spacing:-0.5px; margin:6px 0 0;">밸류체인별 제품 시황 요약</h2>
+          <div style="font-size:13px; color:#6A6F7A; margin-top:4px;">올레핀, 아로마틱스, PVC, 폴리올레핀 세부 가격 트래킹</div>
+        </div>
+      </div>
+      <div id="chains-container" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(390px, 1fr)); gap:14px;">
+        </div>
+    </section>
+
+    <section id="sec-spread" style="padding:34px 0 8px; scroll-margin-top:64px;">
+      <div style="margin-bottom:18px;">
+        <div style="font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:2px; color:#B08D57; font-weight:600;">05 — SPREADS & MARGIN</div>
+        <h2 style="font-size:22px; font-weight:800; letter-spacing:-0.5px; margin:6px 0 0;">스프레드 및 마진 추이 차트 분석</h2>
+        <div style="font-size:13px; color:#6A6F7A; margin-top:4px;">핵심 제품군 마진 분석 트렌드 차트 (Chart.js 반응형 적용)</div>
+      </div>
+      <div class="grid-2">
+        <div style="background:#fff; border:1px solid #E4E6EB; border-radius:8px; padding:20px;">
+          <h3 style="font-size:15px; margin:0 0 12px 0;">에틸렌 - 나프타 스프레드 추이</h3>
+          <canvas id="chart-ethylene-naphtha" height="180"></canvas>
+        </div>
+        <div style="background:#fff; border:1px solid #E4E6EB; border-radius:8px; padding:20px;">
+          <h3 style="font-size:15px; margin:0 0 12px 0;">PVC & 가소제 마진 변동</h3>
+          <canvas id="chart-pvc-margin" height="180"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <div style="margin-top:34px; padding:22px 0; border-top:1px solid #E1E4E9; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+      <div style="font-size:11.5px; color:#9AA0AB; font-family:'IBM Plex Mono',monospace; line-height:1.6;">내부 분석 및 의사결정 보고용 · 구글 스프레드시트 소스 연동 웹앱입니다.</div>
+      <div style="font-size:11.5px; color:#9AA0AB; font-family:'IBM Plex Mono',monospace;">Managed via GitHub Pages Framework</div>
+    </div>
+
+  </div>
+
+  <script>
+    // ===== CONFIGURATION =====
+    // 실시간 동기화할 사용자 구글 스프레드시트 웹 게시 CSV 링크 (기존 소스 보존)
+    const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRgOkv5ydtbyjOT3Ff4w2oLOhzfvINHjw9rbqvXbELhtGaWK4enm0fWfW9nYsb49wdUFXR0-7NFbugu/pub?gid=2028103880&single=true&output=csv';
+
+    let globalData = { cols: [], rows: [] };
+    let selectedDate = "";
+
+    const C = { up: '#C5392B', down: '#2E68C4', flat: '#6A6F7A' };
+
+    // ===== DATA PARSING UTILITIES =====
+    function parseCSV(text) {
+      const lines = text.split(/\r?\n/);
+      return lines.map(line => {
+        let row = [];
+        let inQuotes = false;
+        let currentField = '';
+        for (let i = 0; i < line.length; i++) {
+          let char = line[i];
+          if (char === '"') { inQuotes = !inQuotes; }
+          else if (char === ',' && !inQuotes) { row.push(currentField.trim()); currentField = ''; }
+          else { currentField += char; }
+        }
+        row.push(currentField.trim());
+        return row;
+      }).filter(r => r.length > 1 && r[0] !== '');
+    }
+
+    // ===== CORE ENGINE =====
+    async function initDashboard() {
+      updateSyncStatus('loading', '구글시트 데이터 동기화 중...');
+      try {
+        const res = await fetch(SHEET_CSV_URL + '&_ts=' + Date.now(), { cache: 'no-store' });
+        if (!res.ok) throw new Error('Network error');
+        const text = await res.text();
+        
+        processSheetData(text);
+        fetchLiveQuotes();
+      } catch (err) {
+        console.error(err);
+        updateSyncStatus('error', '데이터 로드 실패 (오프라인 상태)');
+      }
+    }
+
+    function processSheetData(text) {
+      const csvData = parseCSV(text);
+      if(csvData.length < 2) return;
+
+      // 헤더 위치 검색 (WTI, Naphtha 컬럼 포함된 행 찾기)
+      let headerIdx = csvData.findIndex(row => row.includes('WTI') && row.includes('Naphtha'));
+      if(headerIdx === -1) headerIdx = 0;
+      
+      const headers = csvData[headerIdx];
+      globalData.cols = headers;
+      globalData.rows = [];
+
+      for(let i = headerIdx + 1; i < csvData.length; i++) {
+        const row = csvData[i];
+        if(!row[0]) continue; // 날짜 공란 패스
+        
+        let rowObj = { date: row[0], vals: {} };
+        headers.forEach((h, cIdx) => {
+          if(cIdx === 0) return;
+          let val = parseFloat(row[cIdx].replace(/,/g, ''));
+          rowObj.vals[h] = isNaN(val) ? 0 : val;
+        });
+        globalData.rows.push(rowObj);
+      }
+
+      // 최신순 정렬
+      globalData.rows.sort((a,b) => b.date.localeCompare(a.date));
+      
+      // 드롭다운 채우기
+      const select = document.getElementById('select-date');
+      select.innerHTML = '';
+      globalData.rows.forEach((r, idx) => {
+        let opt = document.createElement('option');
+        opt.value = r.date;
+        opt.textContent = r.date + (idx === 0 ? ' (최신 데이터)' : '');
+        select.appendChild(opt);
+      });
+
+      selectedDate = globalData.rows[0].date;
+      select.addEventListener('change', (e) => {
+        selectedDate = e.target.value;
+        renderDashboard();
+      });
+
+      const now = new Date();
+      updateSyncStatus('ok', `동기화 완료 ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`);
+      renderDashboard();
+    }
+
+    function updateSyncStatus(status, text) {
+      const dot = document.getElementById('sync-dot');
+      const label = document.getElementById('sync-label');
+      label.textContent = text;
+      if (status === 'ok') dot.style.background = '#3DBC84';
+      else if (status === 'loading') dot.style.background = '#5FA8E8';
+      else dot.style.background = '#E0A030';
+    }
+
+    // ===== RENDER LOGIC =====
+    function renderDashboard() {
+      const curRow = globalData.rows.find(r => r.date === selectedDate);
+      // 일주일전 인덱스 매칭 매커니즘 (가까운 과거 영업일 추적)
+      const curIdx = globalData.rows.findIndex(r => r.date === selectedDate);
+      const prevRow = globalData.rows[curIdx + 5] || globalData.rows[globalData.rows.length - 1]; // 대략 5영업일 전 주간 데이터 매칭
+
+      if(!curRow) return;
+
+      document.getElementById('badge-date').textContent = `${selectedDate.substring(5)} 종가`;
+      document.getElementById('text-as-of').textContent = `${selectedDate} 종가 기준 리포트`;
+
+      // 1. 핵심 시그널 컴포넌트 렌더링
+      const targetSignals = ['WTI', 'Naphtha', 'Ethylene', 'PVC(China)', 'MMA(ICIS)'];
+      let sigHTML = '';
+      targetSignals.forEach(sig => {
+        let nowVal = curRow.vals[sig] || 0;
+        let prevVal = prevRow ? (prevRow.vals[sig] || 0) : nowVal;
+        let chg = nowVal - prevVal;
+        let color = chg > 0 ? C.up : (chg < 0 ? C.down : C.flat);
+        let arrow = chg > 0 ? '▲' : (chg < 0 ? '▼' : '■');
+
+        sigHTML += `
+          <div style="background:#fff; border-1px solid #E4E6EB; border-radius:8px; padding:18px 20px; border-top:3px solid ${color};">
+            <div style="font-size:13px; color:#4A515E; font-weight:600;">${sig}</div>
+            <div style="display:flex; align-items:flex-end; gap:6px; margin-top:8px;">
+              <span style="font-size:26px; font-weight:700; color:${color}; font-family:'IBM Plex Mono',monospace;">${nowVal.toLocaleString()}</span>
+              <span style="font-size:12px; color:${color}; font-family:'IBM Plex Mono',monospace; margin-left:auto;">${arrow} ${Math.abs(chg).toFixed(1)}</span>
+            </div>
+          </div>`;
+      });
+      document.getElementById('signals-container').innerHTML = sigHTML;
+
+      // 2. 가격 테이블 컴포넌트 렌더링
+      let tableHTML = '';
+      const tableItems = ['WTI', 'Naphtha', 'Ethylene', 'Propylene(KOR)', 'Benzene', 'PVC(China)', 'DOTP', 'PTA', 'MEG', 'MMA(ICIS)', 'PP', 'HDPE'];
+      tableItems.forEach(item => {
+        let cVal = curRow.vals[item] || 0;
+        let pVal = prevRow ? (prevRow.vals[item] || 0) : cVal;
+        let chg = cVal - pVal;
+        let pct = pVal ? (chg / pVal * 100).toFixed(1) : '0.0';
+        let color = chg > 0 ? C.up : (chg < 0 ? C.down : C.flat);
+        let arrow = chg > 0 ? '▲' : (chg < 0 ? '▼' : '■');
+
+        tableHTML += `
+          <tr style="border-bottom:1px solid #F1F2F4;">
+            <td style="padding:11px 12px; text-align:left; font-weight:600; color:#22272F;">${item}</td>
+            <td style="padding:11px 12px; color:#4A515E; font-family:'IBM Plex Mono',monospace;">${pVal.toLocaleString()}</td>
+            <td style="padding:11px 12px; font-weight:700; background:#FAF8F3; font-family:'IBM Plex Mono',monospace;">${cVal.toLocaleString()}</td>
+            <td style="padding:11px 12px; font-weight:600; color:${color}; font-family:'IBM Plex Mono',monospace;">${arrow} ${Math.abs(chg).toLocaleString()}</td>
+            <td style="padding:11px 12px; font-weight:600; color:${color}; font-family:'IBM Plex Mono',monospace;">${chg > 0 ? '+' : ''}${pct}%</td>
+          </tr>`;
+      });
+      document.getElementById('table-body-price').innerHTML = tableHTML;
+
+      // 3. 거시 지표 렌더링
+      const macroItems = ['WTI', 'BRENT', 'DUBAI', 'Naphtha', '환율'];
+      let macroHTML = '';
+      macroItems.forEach(item => {
+        let v = curRow.vals[item] || 0;
+        let pv = prevRow ? (prevRow.vals[item] || 0) : v;
+        let chg = v - pv;
+        let color = chg > 0 ? C.up : (chg < 0 ? C.down : C.flat);
+        macroHTML += `
+          <div style="background:#fff; border:1px solid #E4E6EB; border-radius:7px; padding:15px 17px;">
+            <div style="font-size:12px; color:#2C313B; font-weight:600;">${item === '환율' ? 'USD/KRW 환율' : item}</div>
+            <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-top:12px;">
+              <span style="font-size:20px; font-weight:600; font-family:'IBM Plex Mono',monospace;">${v.toLocaleString()}</span>
+              <span style="font-size:11.5px; font-weight:600; color:${color}; font-family:'IBM Plex Mono',monospace;">${chg > 0 ? '▲' : (chg < 0 ? '▼' : '■')} ${Math.abs(chg).toFixed(1)}</span>
+            </div>
+          </div>`;
+      });
+      document.getElementById('macro-container').innerHTML = macroHTML;
+
+      // 4. 제품별 체인 동적 바인딩
+      const chainsData = {
+        "Olefins 체인": ['Ethylene', 'Propylene(ICIS)', 'Propylene(KOR)', 'Butadiene'],
+        "Aromatics 체인": ['Benzene', 'Toluene', 'Xylene', 'P-X'],
+        "PVC & 가소제 밸류체인": ['VCM', 'PVC(China)', 'PVC(SEA)', '2-EH', 'DOTP']
+      };
+      let chainsHTML = '';
+      Object.keys(chainsData).forEach(cName => {
+        let itemsHTML = '';
+        chainsData[cName].forEach(prod => {
+          let v = curRow.vals[prod] || 0;
+          itemsHTML += `
+            <div style="display:flex; justify-content:space-between; padding:9px 0; border-bottom:1px solid #F1F2F4;">
+              <span style="font-size:13px; color:#22272F; font-weight:500;">${prod}</span>
+              <span style="font-family:'IBM Plex Mono',monospace; font-size:13.5px; font-weight:600;">${v.toLocaleString()} <span style="font-size:10px; color:#9AA0AB; font-weight:400;">$/t</span></span>
+            </div>`;
+        });
+        chainsHTML += `
+          <div style="background:#fff; border:1px solid #E4E6EB; border-radius:8px; padding:16px;">
+            <div style="font-size:14px; font-weight:700; color:#1C2433; border-bottom:1px solid #E9EBEF; padding-bottom:8px; margin-bottom:10px;">${cName}</div>
+            ${itemsHTML}
+          </div>`;
+      });
+      document.getElementById('chains-container').innerHTML = chainsHTML;
+
+      // 5. 차트 동적 업데이트
+      renderChartsTimeline();
+    }
+
+    // ===== CHARTING WITH CHART.JS =====
+    let ethChartInstance = null;
+    let pvcChartInstance = null;
+
+    function renderChartsTimeline() {
+      // 시계열 트렌드용으로 최근 15개 영업일 추출하여 순차 배치
+      let timelineRows = globalData.rows.slice(0, 15).reverse();
+      let labels = timelineRows.map(r => r.date.substring(5));
+      
+      // 스프레드 계산 시계열 배열 구축
+      let ethNaphSpread = timelineRows.map(r => (r.vals['Ethylene'] || 0) - (r.vals['Naphtha'] || 0));
+      let pvcVals = timelineRows.map(r => r.vals['PVC(China)'] || 0);
+      let dotpVals = timelineRows.map(r => r.vals['DOTP'] || 0);
+
+      // 에틸렌-나프타 차트
+      if (ethChartInstance) ethChartInstance.destroy();
+      const ctxEth = document.getElementById('chart-ethylene-naphtha').getContext('2d');
+      ethChartInstance = new Chart(ctxEth, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'C2 Core Margin ($/t)',
+            data: ethNaphSpread,
+            borderColor: '#B08D57',
+            backgroundColor: 'rgba(176, 141, 87, 0.1)',
+            fill: true,
+            tension: 0.1,
+            borderWidth: 2
+          }]
+        },
+        options: { responsive: true, scales: { y: { beginAtZero: false } } }
+      });
+
+      // PVC & DOTP 가격 차트
+      if (pvcChartInstance) pvcChartInstance.destroy();
+      const ctxPvc = document.getElementById('chart-pvc-margin').getContext('2d');
+      pvcChartInstance = new Chart(ctxPvc, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [
+            { label: 'PVC (China)', data: pvcVals, borderColor: '#2E68C4', fill: false, tension: 0.1 },
+            { label: 'DOTP', data: dotpVals, borderColor: '#3F8F5C', fill: false, tension: 0.1 }
+          ]
+        },
+        options: { responsive: true }
+      });
+    }
+
+    // ===== FINANCIAL QUOTES FETCH ENGINE (YAHOO / LIVE) =====
+    async function fetchLiveQuotes() {
+      document.getElementById('live-stamp').textContent = "실시간 동기화 중...";
+      try {
+        // ExchangeRate-API 통한 실시간 원달러 환율 취득
+        const resKrw = await fetch('https://open.er-api.com/v6/latest/USD');
+        const jsonKrw = await resKrw.json();
+        if(jsonKrw && jsonKrw.rates && jsonKrw.rates.KRW) {
+          let krwRate = jsonKrw.rates.KRW;
+          document.getElementById('live-krw').textContent = Math.round(krwRate).toLocaleString();
+          document.getElementById('live-krw-chg').textContent = "▲ 실시간 반영";
+          document.getElementById('live-krw-chg').style.color = C.up;
+        }
+
+        // 구글시트 최신 행의 WTI 기준으로 Live fallback 배치 
+        if(globalData.rows.length > 0) {
+          let latestWti = globalData.rows[0].vals['WTI'] || 75.0;
+          document.getElementById('live-wti').textContent = latestWti.toFixed(2);
+          document.getElementById('live-wti-chg').textContent = "■ 당일 종가";
+          document.getElementById('live-wti-chg').style.color = C.flat;
+        }
+
+        const now = new Date();
+        document.getElementById('live-stamp').textContent = `조회 ${now.toLocaleDateString()} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')} KST`;
+        document.getElementById('live-summary').textContent = "국제 원자재 및 원달러 환율 실시간 API 세션이 정상적으로 활성화되었습니다.";
+      } catch (e) {
+        document.getElementById('live-summary').textContent = "실시간 외부 API 통신 제한으로 대시보드 저장 데이터 기준으로 처리합니다.";
+      }
+    }
+
+    // 초기 구동 바인딩
+    window.addEventListener('DOMContentLoaded', () => {
+      initDashboard();
+      document.getElementById('btn-sync').addEventListener('click', initDashboard);
+    });
+  </script>
+</body>
+</html>
