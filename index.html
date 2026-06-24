@@ -688,7 +688,7 @@ window.__PETRO_DATA = {
   <script>
     // ===== CONFIGURATION =====
     // 실시간 동기화할 사용자 구글 스프레드시트 웹 게시 CSV 링크 (기존 소스 보존)
-    const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRgOkv5ydtbyjOT3Ff4w2oLOhzfvINHjw9rbqvXbELhtGaWK4enm0fWfW9nYsb49wdUFXR0-7NFbugu/pub?output=csv';
+    const SHEET_CSV_URL = 'https://script.google.com/macros/s/AKfycbx35XmMWdJPqf9Ne_k7Wxzix9ny8P7QdlrdCJ-Je5us3Bi66kMNx5KYjHk-v_UfEySy/exec';
 
     let globalData = { cols: [], rows: [] };
     let selectedDate = "";
@@ -717,51 +717,93 @@ window.__PETRO_DATA = {
     async function initDashboard() {
       updateSyncStatus('loading', '구글시트 동기화 중...');
 
-      // 내장 데이터 먼저 표시 (즉시)
+      // 내장 데이터 먼저 즉시 표시
       if (window.__PETRO_DATA && globalData.rows.length === 0) {
         loadFromPetroData();
       }
 
-      // CORS 우회 프록시 목록 (순서대로 시도)
-      const proxies = [
-        (url) => `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
-        (url) => `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(url)}`,
-        (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
-      ];
+      // Apps Script 직접 호출 (CORS 없음)
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 10000);
+        const res = await fetch(SHEET_CSV_URL + '?_ts=' + Date.now(), {
+          cache: 'no-store',
+          signal: controller.signal
+        });
+        clearTimeout(timer);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
 
-      const targetUrl = SHEET_CSV_URL + '&_ts=' + Date.now();
+        const json = await res.json();
+        if (!json || !Array.isArray(json) || json.length < 2) throw new Error('데이터 없음');
 
-      for (let i = 0; i < proxies.length; i++) {
-        try {
-          const proxyUrl = proxies[i](targetUrl);
-          const controller = new AbortController();
-          const timer = setTimeout(() => controller.abort(), 5000); // 5초 타임아웃
-          const res = await fetch(proxyUrl, { cache: 'no-store', signal: controller.signal });
-          clearTimeout(timer);
-          if (!res.ok) throw new Error('HTTP ' + res.status);
-          
-          let text;
-          // allorigins는 JSON으로 감싸서 반환
-          if (proxyUrl.includes('allorigins')) {
-            const json = await res.json();
-            text = json.contents;
-          } else {
-            text = await res.text();
-          }
+        processAppsScriptData(json);
+        fetchLiveQuotes();
+      } catch (e) {
+        console.warn('Apps Script 연결 실패:', e.message);
+        updateSyncStatus('ok', '내장데이터 운영 중 (6/22)');
+        fetchLiveQuotes();
+      }
+    }
 
-          if (!text || text.length < 100) throw new Error('Empty response');
-          
-          processSheetData(text);
-          fetchLiveQuotes();
-          return; // 성공 시 종료
-        } catch (e) {
-          console.warn(`프록시 ${i+1} 실패:`, e.message);
+    // Apps Script JSON 데이터 파싱 (2D 배열 형태)
+    function processAppsScriptData(data) {
+      if (!data || data.length < 2) return;
+
+      // WTI, Naphtha 포함된 헤더 행 찾기
+      let headerIdx = data.findIndex(row => 
+        row.some(c => String(c).trim() === 'WTI') && 
+        row.some(c => String(c).trim() === 'Naphtha')
+      );
+      if (headerIdx < 0) headerIdx = 0;
+
+      const headers = data[headerIdx].map(h => String(h).trim());
+      globalData.cols = headers;
+      globalData.rows = [];
+
+      for (let i = headerIdx + 1; i < data.length; i++) {
+        const row = data[i];
+        if (!row[0]) continue;
+
+        // 날짜 파싱
+        let dateStr = String(row[0]).trim();
+        // 엑셀 날짜 숫자 처리
+        if (/^\d{5}$/.test(dateStr)) {
+          const d = new Date(Date.UTC(1899, 11, 30) + parseInt(dateStr) * 86400000);
+          dateStr = d.toISOString().slice(0, 10);
         }
+        // YYYY-MM-DD 형식 정규화
+        let m = dateStr.match(/^(\d{4})[-./](\d{1,2})[-./](\d{1,2})$/);
+        if (m) dateStr = m[1] + '-' + m[2].padStart(2,'0') + '-' + m[3].padStart(2,'0');
+        if (!dateStr || dateStr < '2024-01-01') continue;
+
+        let rowObj = { date: dateStr, vals: {} };
+        headers.forEach((h, cIdx) => {
+          if (cIdx === 0 || !h) return;
+          let raw = String(row[cIdx] || '').replace(/,/g, '').trim();
+          let val = parseFloat(raw);
+          rowObj.vals[h] = isNaN(val) ? 0 : val;
+        });
+        globalData.rows.push(rowObj);
       }
 
-      // 모든 프록시 실패 → 내장 데이터로 운영
-      updateSyncStatus('ok', '내장데이터 운영 중 (6/22)');
-      fetchLiveQuotes();
+      globalData.rows.sort((a, b) => b.date.localeCompare(a.date));
+
+      // 드롭다운 업데이트
+      const select = document.getElementById('select-date');
+      select.innerHTML = '';
+      globalData.rows.forEach((r, idx) => {
+        let opt = document.createElement('option');
+        opt.value = r.date;
+        opt.textContent = r.date.replace(/-/g, '.') + (idx === 0 ? ' · 최신' : '');
+        select.appendChild(opt);
+      });
+      select.addEventListener('change', (e) => { selectedDate = e.target.value; renderDashboard(); });
+      selectedDate = globalData.rows[0].date;
+
+      const now = new Date();
+      const hm = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+      updateSyncStatus('ok', `동기화 완료 ${hm}`);
+      renderDashboard();
     }
 
     function processSheetData(text) {
