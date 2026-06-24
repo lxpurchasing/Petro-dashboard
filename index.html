@@ -18,6 +18,7 @@ window.__PETRO_DATA = {
   refs: {"war":"2026-02-27","yearAgo":"2025-06-23"},
   peaks: {"WTI":112.95,"Naphtha":1207.5,"Natural Gas":22.35,"Ethylene":1500,"Propylene":1335,"Benzene":1191,"Toluene":1136,"PVC":1075,"Phenol":1300,"MMA":2350,"ABS":1890,"PP":1290,"LDPE":1245,"환율":1546.5},
   rows: [
+    {"d":"2026-06-23","v":[73.21,77.08,80.24,668.38,15.74,870,977.5,940,846.67,829,820,1507,1220,980,1000,815,335,570,750,725,675,670,745,900,1225,1125,322,768.96,1016.33,1195,765,773,1560,1810,1775,1100,1070,1150,1095,552,0,0,1535.7,101.41]},
     {"d":"2024-12-02","v":[67.84,71.83,71.35,634,15.115,895,822.5,790,897.33,746,690,1300,1060,917.5,895,670,445,550,750,760,660,641,670,800,1170,1120,292.75,693.5,794,920,537.5,625,1405,1650,1433,920,880,1120,960,545,980,980,1395.1,106.45]},
     {"d":"2024-12-03","v":[69.54,73.62,73.07,634,15.125,895,822.5,790,891.33,740,690,1300,1060,917.5,890,660,445,550,750,760,660,635,670,800,1170,1120,290,704.3,792,920,537.5,625,1405,1650,1433,920,880,1120,960,545,980,980,1402,106.36]},
     {"d":"2024-12-04","v":[68.19,72.31,71.96,634,15.075,895,822.5,795,898.33,756,690,1300,1060,917.5,890,660,445,550,750,755,660,635,670,800,1170,1120,288.5,724.7,794,920,537.5,625,1405,1650,1433,915,880,1120,960,544,980,980,1403.4,106.32]},
@@ -688,7 +689,7 @@ window.__PETRO_DATA = {
   <script>
     // ===== CONFIGURATION =====
     // 실시간 동기화할 사용자 구글 스프레드시트 웹 게시 CSV 링크 (기존 소스 보존)
-    const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRgOkv5ydtbyjOT3Ff4w2oLOhzfvINHjw9rbqvXbELhtGaWK4enm0fWfW9nYsb49wdUFXR0-7NFbugu/pub?gid=2028103880&single=true&output=csv';
+    const SHEET_CSV_URL = 'https://late-cherry-a539.junmor7079.workers.dev';
 
     let globalData = { cols: [], rows: [] };
     let selectedDate = "";
@@ -715,29 +716,29 @@ window.__PETRO_DATA = {
 
     // ===== CORE ENGINE =====
     async function initDashboard() {
-      updateSyncStatus('loading', '데이터 로드 중...');
+      updateSyncStatus('loading', '구글시트 동기화 중...');
 
       // 내장 데이터 먼저 즉시 표시
       if (window.__PETRO_DATA && globalData.rows.length === 0) {
         loadFromPetroData();
       }
 
-      // GitHub Pages와 같은 도메인의 petro-data.json 직접 fetch (CORS 없음!)
+      // Cloudflare Worker 직접 fetch (CORS 완전 해결!)
       try {
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 8000);
-        const res = await fetch('https://raw.githubusercontent.com/lxpurchasing/Petro-dashboard/main/petro-data.json?_ts=' + Date.now(), {
+        const timer = setTimeout(() => controller.abort(), 10000);
+        const res = await fetch(SHEET_CSV_URL + '?_ts=' + Date.now(), {
           cache: 'no-store', signal: controller.signal
         });
         clearTimeout(timer);
         if (!res.ok) throw new Error('HTTP ' + res.status);
-        const data = await res.json();
-        if (!data || !Array.isArray(data) || data.length < 5) throw new Error('데이터 없음');
-        processAppsScriptData(data);
+        const text = await res.text();
+        if (!text || text.length < 100) throw new Error('빈 응답');
+        processSheetData(text);
         fetchLiveQuotes();
       } catch(e) {
-        console.warn('petro-data.json 로드 실패:', e.message);
-        updateSyncStatus('ok', '내장데이터 운영 중 (6/22)');
+        console.warn('Worker 연결 실패:', e.message);
+        updateSyncStatus('ok', '내장데이터 운영 중 (6/23)');
         fetchLiveQuotes();
       }
     }
