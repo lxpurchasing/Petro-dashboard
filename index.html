@@ -726,7 +726,7 @@ window.__PETRO_DATA = {
       try {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 8000);
-        const res = await fetch('./petro-data.json?_ts=' + Date.now(), {
+        const res = await fetch('https://raw.githubusercontent.com/lxpurchasing/Petro-dashboard/main/petro-data.json?_ts=' + Date.now(), {
           cache: 'no-store', signal: controller.signal
         });
         clearTimeout(timer);
