@@ -688,7 +688,7 @@ window.__PETRO_DATA = {
   <script>
     // ===== CONFIGURATION =====
     // 실시간 동기화할 사용자 구글 스프레드시트 웹 게시 CSV 링크 (기존 소스 보존)
-    const SHEET_CSV_URL = 'https://script.google.com/macros/s/AKfycbzkSXl-lIa1L0s5xl5_FjEuY-LeOI0cXCr1WEPoGFv3ZFxD42ZkInv4nP7qsnyIYVcI/exec';
+    const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRgOkv5ydtbyjOT3Ff4w2oLOhzfvINHjw9rbqvXbELhtGaWK4enm0fWfW9nYsb49wdUFXR0-7NFbugu/pub?gid=2028103880&single=true&output=csv';
 
     let globalData = { cols: [], rows: [] };
     let selectedDate = "";
@@ -722,26 +722,39 @@ window.__PETRO_DATA = {
         loadFromPetroData();
       }
 
-      // Apps Script 직접 호출 (CORS 없음)
+      // allorigins 프록시로 CSV fetch (검증된 방식)
+      const proxyUrl = 'https://api.allorigins.win/get?url=' + encodeURIComponent(SHEET_CSV_URL + '&_ts=' + Date.now());
       try {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 10000);
-        const res = await fetch(SHEET_CSV_URL + '?_ts=' + Date.now(), {
-          cache: 'no-store',
-          signal: controller.signal
-        });
+        const res = await fetch(proxyUrl, { cache: 'no-store', signal: controller.signal });
         clearTimeout(timer);
         if (!res.ok) throw new Error('HTTP ' + res.status);
 
         const json = await res.json();
-        if (!json || !Array.isArray(json) || json.length < 2) throw new Error('데이터 없음');
+        if (!json || !json.contents || json.contents.length < 100) throw new Error('빈 응답');
 
-        processAppsScriptData(json);
+        processSheetData(json.contents);
         fetchLiveQuotes();
       } catch (e) {
-        console.warn('Apps Script 연결 실패:', e.message);
-        updateSyncStatus('ok', '내장데이터 운영 중 (6/22)');
-        fetchLiveQuotes();
+        console.warn('allorigins 실패, corsproxy 시도:', e.message);
+        // fallback: corsproxy.io
+        try {
+          const proxy2 = 'https://corsproxy.io/?' + encodeURIComponent(SHEET_CSV_URL);
+          const controller2 = new AbortController();
+          const timer2 = setTimeout(() => controller2.abort(), 8000);
+          const res2 = await fetch(proxy2, { cache: 'no-store', signal: controller2.signal });
+          clearTimeout(timer2);
+          if (!res2.ok) throw new Error('HTTP ' + res2.status);
+          const text2 = await res2.text();
+          if (!text2 || text2.length < 100) throw new Error('빈 응답');
+          processSheetData(text2);
+          fetchLiveQuotes();
+        } catch (e2) {
+          console.warn('모든 프록시 실패:', e2.message);
+          updateSyncStatus('ok', '내장데이터 운영 중 (6/22)');
+          fetchLiveQuotes();
+        }
       }
     }
 
