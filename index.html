@@ -745,7 +745,7 @@ window.__PETRO_DATA = {
         const latestDate = globalData.rows[0]?.date || '';
         const mm = latestDate ? parseInt(latestDate.slice(5,7)) : 6;
         const dd = latestDate ? parseInt(latestDate.slice(8,10)) : 23;
-        updateSyncStatus('ok', `내장데이터 운영 중 (${mm}/${dd})`);
+        updateSyncStatus('ok', `내장데이터 운영 중`);
         fetchLiveQuotes();
       }
     }
@@ -1234,7 +1234,7 @@ window.__PETRO_DATA = {
       selectedDate = globalData.rows[0].date;
       const ld = globalData.rows[0]?.date || '';
       const lmm = ld.slice(5,7), ldd = ld.slice(8,10);
-      updateSyncStatus('ok', `내장데이터 운영 중 (${parseInt(lmm)}/${parseInt(ldd)})`);
+      updateSyncStatus('ok', `내장데이터 운영 중`);
       renderDashboard();
     }
   </script>
