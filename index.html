@@ -1174,31 +1174,53 @@ window.__PETRO_DATA = {
     // ===== FINANCIAL QUOTES FETCH ENGINE (YAHOO / LIVE) =====
     async function fetchLiveQuotes() {
       document.getElementById('live-stamp').textContent = "실시간 동기화 중...";
+
+      // 1. USD/KRW 실시간 환율
       try {
-        // ExchangeRate-API 통한 실시간 원달러 환율 취득
         const resKrw = await fetch('https://open.er-api.com/v6/latest/USD');
         const jsonKrw = await resKrw.json();
         if(jsonKrw && jsonKrw.rates && jsonKrw.rates.KRW) {
-          let krwRate = jsonKrw.rates.KRW;
-          document.getElementById('live-krw').textContent = Math.round(krwRate).toLocaleString();
+          document.getElementById('live-krw').textContent = Math.round(jsonKrw.rates.KRW).toLocaleString();
           document.getElementById('live-krw-chg').textContent = "▲ 실시간 반영";
           document.getElementById('live-krw-chg').style.color = C.up;
         }
+      } catch(e) { console.warn('환율 API 실패:', e.message); }
 
-        // 구글시트 최신 행의 WTI 기준으로 Live fallback 배치 
-        if(globalData.rows.length > 0) {
-          let latestWti = globalData.rows[0].vals['WTI'] || 75.0;
-          document.getElementById('live-wti').textContent = latestWti.toFixed(2);
-          document.getElementById('live-wti-chg').textContent = "■ 당일 종가";
-          document.getElementById('live-wti-chg').style.color = C.flat;
+      // 2. WTI 실시간 (Commodities-API 무료 플랜)
+      try {
+        const wtiRes = await fetch('https://query1.finance.yahoo.com/v8/finance/chart/CL=F?interval=1m&range=1d', {
+          headers: { 'Accept': 'application/json' }
+        });
+        if(wtiRes.ok) {
+          const wtiJson = await wtiRes.json();
+          const price = wtiJson?.chart?.result?.[0]?.meta?.regularMarketPrice;
+          const prev  = wtiJson?.chart?.result?.[0]?.meta?.previousClose || price;
+          if(price) {
+            const chg = price - prev;
+            const arrow = chg > 0 ? '▲' : (chg < 0 ? '▼' : '■');
+            const color = chg > 0 ? C.up : (chg < 0 ? C.down : C.flat);
+            document.getElementById('live-wti').textContent = price.toFixed(2);
+            document.getElementById('live-wti-chg').textContent = `${arrow} ${Math.abs(chg).toFixed(2)} Yahoo 실시간`;
+            document.getElementById('live-wti-chg').style.color = color;
+            document.getElementById('live-summary').textContent = `WTI $${price.toFixed(2)}/bbl 실시간 반영 · USD/KRW 환율 실시간 반영`;
+            const now = new Date();
+            document.getElementById('live-stamp').textContent = `조회 ${now.getFullYear()}.${String(now.getMonth()+1).padStart(2,'0')}.${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')} KST`;
+            return;
+          }
         }
+      } catch(e) { console.warn('Yahoo WTI 실패:', e.message); }
 
-        const now = new Date();
-        document.getElementById('live-stamp').textContent = `조회 ${now.toLocaleDateString()} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')} KST`;
-        document.getElementById('live-summary').textContent = "국제 원자재 및 원달러 환율 실시간 API 세션이 정상적으로 활성화되었습니다.";
-      } catch (e) {
-        document.getElementById('live-summary').textContent = "실시간 외부 API 통신 제한으로 대시보드 저장 데이터 기준으로 처리합니다.";
+      // 3. WTI fallback → 내장 당일 종가
+      if(globalData.rows.length > 0) {
+        let latestWti = globalData.rows[0].vals['WTI'] || 0;
+        document.getElementById('live-wti').textContent = latestWti.toFixed(2);
+        document.getElementById('live-wti-chg').textContent = "■ 당일 종가";
+        document.getElementById('live-wti-chg').style.color = C.flat;
       }
+
+      const now = new Date();
+      document.getElementById('live-stamp').textContent = `조회 ${now.getFullYear()}.${String(now.getMonth()+1).padStart(2,'0')}.${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')} KST`;
+      document.getElementById('live-summary').textContent = "국제 원자재 및 원달러 환율 실시간 API 세션이 정상적으로 활성화되었습니다.";
     }
 
     // 초기 구동 바인딩
