@@ -742,7 +742,10 @@ window.__PETRO_DATA = {
         fetchLiveQuotes();
       } catch(e) {
         console.warn('Worker 연결 실패:', e.message);
-        updateSyncStatus('ok', '내장데이터 운영 중 (6/23)');
+        const latestDate = globalData.rows[0]?.date || '';
+        const mm = latestDate ? parseInt(latestDate.slice(5,7)) : 6;
+        const dd = latestDate ? parseInt(latestDate.slice(8,10)) : 23;
+        updateSyncStatus('ok', `내장데이터 운영 중 (${mm}/${dd})`);
         fetchLiveQuotes();
       }
     }
@@ -1229,7 +1232,9 @@ window.__PETRO_DATA = {
       });
       select.addEventListener('change', (e) => { selectedDate = e.target.value; renderDashboard(); });
       selectedDate = globalData.rows[0].date;
-      updateSyncStatus('ok', '내장 데이터 로드 완료');
+      const ld = globalData.rows[0]?.date || '';
+      const lmm = ld.slice(5,7), ldd = ld.slice(8,10);
+      updateSyncStatus('ok', `내장데이터 운영 중 (${parseInt(lmm)}/${parseInt(ldd)})`);
       renderDashboard();
     }
   </script>
