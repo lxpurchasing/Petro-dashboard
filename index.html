@@ -1186,13 +1186,16 @@ window.__PETRO_DATA = {
         }
       } catch(e) { console.warn('환율 API 실패:', e.message); }
 
-      // 2. WTI 실시간 (Commodities-API 무료 플랜)
+      // 2. WTI 실시간 — allorigins 프록시 경유 (CORS 우회)
       try {
-        const wtiRes = await fetch('https://query1.finance.yahoo.com/v8/finance/chart/CL=F?interval=1m&range=1d', {
-          headers: { 'Accept': 'application/json' }
-        });
+        const yahooUrl = 'https://query1.finance.yahoo.com/v8/finance/chart/CL%3DF?interval=1m&range=1d';
+        const proxyUrl = 'https://api.allorigins.win/get?url=' + encodeURIComponent(yahooUrl);
+        const controller = new AbortController();
+        setTimeout(() => controller.abort(), 8000);
+        const wtiRes = await fetch(proxyUrl, { signal: controller.signal });
         if(wtiRes.ok) {
-          const wtiJson = await wtiRes.json();
+          const wrapper = await wtiRes.json();
+          const wtiJson = JSON.parse(wrapper.contents);
           const price = wtiJson?.chart?.result?.[0]?.meta?.regularMarketPrice;
           const prev  = wtiJson?.chart?.result?.[0]?.meta?.previousClose || price;
           if(price) {
@@ -1200,7 +1203,7 @@ window.__PETRO_DATA = {
             const arrow = chg > 0 ? '▲' : (chg < 0 ? '▼' : '■');
             const color = chg > 0 ? C.up : (chg < 0 ? C.down : C.flat);
             document.getElementById('live-wti').textContent = price.toFixed(2);
-            document.getElementById('live-wti-chg').textContent = `${arrow} ${Math.abs(chg).toFixed(2)} Yahoo 실시간`;
+            document.getElementById('live-wti-chg').textContent = `${arrow} ${Math.abs(chg).toFixed(2)} · Yahoo 실시간`;
             document.getElementById('live-wti-chg').style.color = color;
             document.getElementById('live-summary').textContent = `WTI $${price.toFixed(2)}/bbl 실시간 반영 · USD/KRW 환율 실시간 반영`;
             const now = new Date();
@@ -1208,7 +1211,7 @@ window.__PETRO_DATA = {
             return;
           }
         }
-      } catch(e) { console.warn('Yahoo WTI 실패:', e.message); }
+      } catch(e) { console.warn('WTI 실시간 실패:', e.message); }
 
       // 3. WTI fallback → 내장 당일 종가
       if(globalData.rows.length > 0) {
