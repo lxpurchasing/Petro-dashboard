@@ -653,18 +653,45 @@ window.__PETRO_DATA = {
 
     // ===== CORE ENGINE =====
     async function initDashboard() {
-      updateSyncStatus('loading', '구글시트 데이터 동기화 중...');
-      try {
-        const res = await fetch(SHEET_CSV_URL + '&_ts=' + Date.now(), { cache: 'no-store' });
-        if (!res.ok) throw new Error('Network error');
-        const text = await res.text();
-        
-        processSheetData(text);
-        fetchLiveQuotes();
-      } catch (err) {
-        console.error(err);
-        updateSyncStatus('error', '데이터 로드 실패 (오프라인 상태)');
+      updateSyncStatus('loading', '데이터 로드 중...');
+      // 내장데이터 우선 로드 (항상 성공)
+      loadFromPetroData();
+      fetchLiveQuotes();
+    }
+
+    function loadFromPetroData() {
+      const D = window.__PETRO_DATA;
+      if (!D || !D.rows || !D.rows.length) {
+        updateSyncStatus('error', '데이터 없음');
+        return;
       }
+      globalData.cols = ['date', ...D.cols];
+      globalData.rows = D.rows.map(r => {
+        let vals = {};
+        D.cols.forEach((c, i) => { vals[c] = (r.v[i] != null) ? r.v[i] : 0; });
+        return { date: r.d, vals };
+      });
+
+      // 최신순 정렬 (가장 최근 날짜가 맨 위)
+      globalData.rows.sort((a, b) => b.date.localeCompare(a.date));
+
+      // 드롭다운 채우기
+      const select = document.getElementById('select-date');
+      select.innerHTML = '';
+      globalData.rows.forEach((r, idx) => {
+        let opt = document.createElement('option');
+        opt.value = r.date;
+        opt.textContent = r.date + (idx === 0 ? ' · 최신' : '');
+        select.appendChild(opt);
+      });
+
+      // 항상 최신 날짜 자동 선택
+      selectedDate = globalData.rows[0].date;
+      select.value = selectedDate;
+      select.onchange = (e) => { selectedDate = e.target.value; renderDashboard(); };
+
+      updateSyncStatus('ok', '내장데이터 운영 중');
+      renderDashboard();
     }
 
     function processSheetData(text) {
